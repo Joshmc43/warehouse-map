@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warehouse Map</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --amber: #f59e0b; --green: #16a34a; --green-light: #dcfce7;
+  --blue: #2563eb; --blue-light: #dbeafe;
+  --orange: #ea580c; --orange-light: #ffedd5;
+  --grey: #64748b; --grey-light: #f1f5f9;
+  --border: #e2e8f0; --text: #0f172a; --text-mid: #475569;
+  --text-soft: #94a3b8; --bg: #f8fafc; --white: #ffffff;
+}
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* HEADER */
+.header { background: #0f172a; padding: 12px 16px 10px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; z-index: 20; position: relative; }
+.header-top { display: flex; align-items: center; gap: 8px; }
+.logo { font-size: 17px; font-weight: 900; color: var(--amber); flex: 1; }
+.status-badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: #1e293b; color: #64748b; white-space: nowrap; }
+.status-badge.loaded { background: #14532d; color: #86efac; }
+.header-btns { display: flex; gap: 6px; }
+.hbtn { border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; padding: 7px 12px; white-space: nowrap; touch-action: manipulation; }
+.hbtn-ghost { background: #1e293b; color: #94a3b8; }
+.hbtn-amber { background: var(--amber); color: #000; }
+.search-wrap { position: relative; }
+.search-input { width: 100%; background: #1e293b; border: 1.5px solid #334155; border-radius: 10px; color: #f1f5f9; font-family: 'Inter', sans-serif; font-size: 16px; font-weight: 500; padding: 10px 40px 10px 14px; outline: none; touch-action: manipulation; }
+.search-input::placeholder { color: #475569; }
+.search-input:focus { border-color: var(--amber); }
+.search-clear { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; padding: 4px 8px; display: none; touch-action: manipulation; line-height: 1; }
+.search-clear.visible { display: block; }
+
+/* TABS */
+.aisle-tabs { display: none; background: var(--white); border-bottom: 2px solid var(--border); overflow-x: auto; flex-shrink: 0; scrollbar-width: none; z-index: 10; position: relative; }
+.aisle-tabs::-webkit-scrollbar { display: none; }
+.aisle-tabs.visible { display: flex; }
+.aisle-tab { background: none; border: none; border-bottom: 3px solid transparent; color: var(--text-soft); cursor: pointer; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 800; padding: 16px 20px 13px; white-space: nowrap; flex-shrink: 0; min-height: 56px; touch-action: manipulation; }
+.aisle-tab.active { color: var(--text); border-bottom-color: var(--amber); }
+
+/* VIEW TOGGLE */
+.view-toggle { display: none; background: var(--white); border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 10; }
+.view-toggle.visible { display: flex; }
+.view-btn { flex: 1; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text-soft); cursor: pointer; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700; padding: 14px 8px 11px; min-height: 50px; touch-action: manipulation; }
+.view-btn.active { color: var(--text); border-bottom-color: var(--amber); }
+
+/* DROP ZONE */
+.drop-zone { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }
+.drop-zone-icon { font-size: 56px; }
+.drop-zone-title { font-size: 20px; font-weight: 800; }
+.drop-zone-sub { font-size: 14px; color: var(--text-soft); line-height: 1.6; }
+.drop-zone-btn { background: var(--amber); color: #000; border: none; border-radius: 12px; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 800; padding: 14px 32px; cursor: pointer; touch-action: manipulation; }
+#file-input { display: none; }
+
+/* LIST */
+.list-view { flex: 1; overflow-y: auto; display: none; background: var(--bg); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.list-view.visible { display: block; }
+.result-item { background: var(--white); border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex; align-items: center; gap: 12px; min-height: 68px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: rgba(245,158,11,0.15); }
+.result-item:active { background: var(--grey-light); }
+.result-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.dot-pick { background: var(--green); } .dot-bulk { background: var(--blue); } .dot-damaged { background: var(--orange); } .dot-empty { background: var(--border); }
+.result-body { flex: 1; min-width: 0; }
+.result-loc { font-size: 12px; font-weight: 700; color: var(--text-soft); margin-bottom: 3px; }
+.result-desc { font-size: 16px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-desc.empty { color: var(--text-soft); font-weight: 400; font-style: italic; }
+.result-arrow { color: var(--text-soft); font-size: 20px; flex-shrink: 0; }
+.no-results { text-align: center; padding: 60px 24px; color: var(--text-soft); font-size: 15px; font-weight: 500; }
+
+/* MAP */
+.map-view { flex: 1; overflow: auto; display: none; background: #e2e8f0; padding: 12px; -webkit-overflow-scrolling: touch; }
+.map-view.visible { display: flex; flex-direction: column; }
+.warehouse { display: flex; flex-direction: column; gap: 8px; min-width: max-content; flex: 1; }
+.aisle-row { display: flex; gap: 3px; align-items: stretch; flex: 1; }
+.side-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9px; font-weight: 700; letter-spacing: 2px; color: #94a3b8; min-width: 28px; display: flex; align-items: center; justify-content: center; background: #cbd5e1; border-radius: 3px; }
+.walkway-row { display: flex; gap: 3px; align-items: center; }
+.walkway-spacer { min-width: 28px; }
+.walkway { flex: 1; height: 14px; border-top: 1.5px dashed #94a3b8; border-bottom: 1.5px dashed #94a3b8; display: flex; align-items: center; justify-content: center; }
+.walkway-lbl { font-size: 9px; font-weight: 700; letter-spacing: 5px; color: #94a3b8; text-transform: uppercase; }
+.bay { display: flex; flex-direction: column; flex: 1; background: var(--white); border-radius: 4px; border: 1.5px solid var(--border); overflow: hidden; cursor: pointer; touch-action: manipulation; }
+.bay.highlighted { border-color: var(--amber) !important; box-shadow: 0 0 0 2px var(--amber); }
+.bay-header { background: #f1f5f9; border-bottom: 1.5px solid var(--border); padding: 4px 6px; display: flex; align-items: center; justify-content: space-between; }
+.bay-num { font-size: 13px; font-weight: 900; color: var(--text); }
+.bay-dir { font-size: 11px; font-weight: 700; color: var(--amber); }
+.bay-shelves { display: flex; flex-direction: column; gap: 1px; padding: 1px; flex: 1; }
+.shelf { display: flex; align-items: center; gap: 3px; padding: 3px 5px; border-radius: 2px; flex: 1; min-width: 90px; border-left: 3px solid transparent; }
+.shelf.pick { background: var(--green-light); border-left-color: var(--green); }
+.shelf.bulk { background: var(--blue-light); border-left-color: var(--blue); }
+.shelf.damaged { background: var(--orange-light); border-left-color: var(--orange); }
+.shelf.empty { background: #f8fafc; border-left-color: var(--border); }
+.shelf-lbl { font-size: 9px; font-weight: 800; min-width: 10px; opacity: 0.55; }
+.shelf.pick .shelf-lbl { color: var(--green); } .shelf.bulk .shelf-lbl { color: var(--blue); } .shelf.damaged .shelf-lbl { color: var(--orange); } .shelf.empty .shelf-lbl { color: var(--grey); }
+.shelf-txt { font-size: 9px; font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+.shelf.pick .shelf-txt { color: #14532d; } .shelf.bulk .shelf-txt { color: #1e3a8a; } .shelf.damaged .shelf-txt { color: #7c2d12; } .shelf.empty .shelf-txt { color: var(--text-soft); }
+.shelf-badge { font-size: 8px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: rgba(0,0,0,0.06); color: var(--text-soft); flex-shrink: 0; }
+
+/* DETAIL */
+.detail-panel { position: fixed; inset: 0; background: var(--white); transform: translateX(100%); transition: transform 0.25s cubic-bezier(0.22,1,0.36,1); z-index: 200; display: flex; flex-direction: column; overflow: hidden; }
+.detail-panel.open { transform: translateX(0); }
+.detail-header { background: #0f172a; padding: 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.detail-back { background: #1e293b; border: none; border-radius: 8px; color: #f1f5f9; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; padding: 10px 16px; touch-action: manipulation; }
+.detail-title { font-size: 20px; font-weight: 900; color: var(--amber); flex: 1; }
+.detail-tags { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.detail-tag { background: var(--grey-light); border-radius: 6px; font-size: 12px; font-weight: 700; color: var(--text-mid); padding: 4px 10px; }
+.detail-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.detail-shelf-section { border-bottom: 1px solid var(--border); }
+.detail-shelf-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px 8px; background: var(--grey-light); }
+.detail-shelf-name { font-size: 14px; font-weight: 800; color: var(--text); }
+.detail-shelf-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; border: 1.5px solid; }
+.pick-badge { border-color: var(--green); color: var(--green); background: var(--green-light); }
+.bulk-badge { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+.damaged-badge { border-color: var(--orange); color: var(--orange); background: var(--orange-light); }
+.empty-badge { border-color: var(--border); color: var(--grey); background: var(--grey-light); }
+.detail-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); min-height: 56px; }
+.detail-item:last-child { border-bottom: none; }
+.detail-item-pos { font-size: 12px; font-weight: 700; color: var(--text-soft); min-width: 28px; background: var(--grey-light); border-radius: 5px; padding: 3px 6px; text-align: center; flex-shrink: 0; }
+.detail-item-name { font-size: 16px; font-weight: 700; color: var(--text); flex: 1; line-height: 1.3; }
+.detail-item-name.empty { color: var(--text-soft); font-weight: 400; font-style: italic; }
+
+/* LEGEND */
+.legend { display: none; gap: 12px; padding: 8px 16px; background: var(--white); border-top: 1px solid var(--border); flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
+.legend.visible { display: flex; }
+.legend-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-lbl { font-size: 11px; font-weight: 600; color: var(--text-soft); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="logo">▣ WAREHOUSE MAP</div>
+    <div class="status-badge" id="status-badge">No data</div>
+    <div class="header-btns">
+      <button class="hbtn hbtn-ghost" id="update-btn" style="display:none" onclick="document.getElementById('file-input').click()">↑ Update</button>
+      <button class="hbtn hbtn-amber" id="export-btn" style="display:none" onclick="doExport()">↓ Export</button>
+    </div>
+  </div>
+  <div class="search-wrap">
+    <input class="search-input" id="search-input" type="text" placeholder="Search bin or item..."
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      oninput="handleSearch()" onkeyup="handleSearch()" onchange="handleSearch()">
+    <button class="search-clear" id="search-clear" onclick="clearSearch()">✕</button>
+  </div>
+</div>
+
+<div class="aisle-tabs" id="aisle-tabs"></div>
+
+<div class="view-toggle" id="view-toggle">
+  <button class="view-btn active" id="btn-list" onclick="setView('list')">☰ LIST</button>
+  <button class="view-btn" id="btn-map" onclick="setView('map')">⊞ MAP</button>
+</div>
+
+<div class="drop-zone" id="drop-zone">
+  <div class="drop-zone-icon">📦</div>
+  <div class="drop-zone-title">Load Warehouse Data</div>
+  <div class="drop-zone-sub">Load your SAP B1 export<br>Supports CSV or Excel (.xlsx)</div>
+  <button class="drop-zone-btn" onclick="document.getElementById('file-input').click()">CHOOSE FILE</button>
+  <input type="file" id="file-input" accept=".csv,.xlsx,.xls" onchange="handleFileInput(this)">
+</div>
+
+<div class="list-view" id="list-view"></div>
+
+<div class="map-view" id="map-view">
+  <div class="warehouse" id="warehouse"></div>
+</div>
+
+<div class="legend" id="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div><span class="legend-lbl">Pick Face</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div><span class="legend-lbl">Bulk</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div><span class="legend-lbl">Damaged</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--border)"></div><span class="legend-lbl">Empty</span></div>
+</div>
+
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <button class="detail-back" onclick="closeDetail()">← Back</button>
+    <div class="detail-title" id="detail-title">Bay</div>
+  </div>
+  <div class="detail-tags" id="detail-tags"></div>
+  <div class="detail-body" id="detail-body"></div>
+</div>
+
+<script>
+var warehouseData = {};
+var allLocations  = [];
+var currentAisle  = null;
+var currentView   = 'list';
+
+function getDirection(bay) {
+  var pair = Math.floor((bay - 1) / 2);
+  var isOdd = bay % 2 === 1;
+  var pairLeft = pair % 2 === 0;
+  return isOdd ? (pairLeft ? '←' : '→') : (pairLeft ? '→' : '←');
+}
+
+function getShelfClass(type, inactive) {
+  if (inactive === 'Yes') return 'empty';
+  if (!type) return 'empty';
+  var t = type.toUpperCase();
+  if (t.indexOf('PICK') >= 0) return 'pick';
+  if (t.indexOf('BULK') >= 0) return 'bulk';
+  if (t.indexOf('DAMAGED') >= 0) return 'damaged';
+  return 'empty';
+}
+
+function parseData(rows) {
+  warehouseData = {};
+  allLocations  = [];
+
+  var headerIdx = -1, colMap = {};
+  for (var i = 0; i < Math.min(5, rows.length); i++) {
+    var row = rows[i].map(function(c) { return String(c || '').trim().toLowerCase(); });
+    if (row.some(function(c) { return c.indexOf('bin') >= 0 || c.indexOf('location') >= 0; })) {
+      headerIdx = i;
+      row.forEach(function(c, idx) {
+        if (c.indexOf('bin') >= 0 || c.indexOf('location') >= 0) colMap.loc = idx;
+        if (c.indexOf('description') >= 0 || c.indexOf('item desc') >= 0) colMap.desc = idx;
+        if (c.indexOf('type') >= 0 && colMap.type === undefined) colMap.type = idx;
+        if (c.indexOf('inactive') >= 0) colMap.inactive = idx;
+      });
+      break;
+    }
+  }
+  if (headerIdx === -1 || colMap.loc === undefined) {
+    colMap = { loc: 1, desc: 2, type: 5, inactive: 6 };
+    headerIdx = rows[0] && String(rows[0][1]||'').toLowerCase().indexOf('bin') >= 0 ? 0 : -1;
+  }
+
+  var dataRows = rows.slice(headerIdx + 1);
+  for (var r = 0; r < dataRows.length; r++) {
+    var row = dataRows[r];
+    if (!row || row.length < 2) continue;
+    var loc      = String(row[colMap.loc]      || '').trim();
+    var desc     = String(row[colMap.desc]     || '').trim();
+    var type     = String(row[colMap.type]     || '').trim();
+    var inactive = String(row[colMap.inactive] || '').trim();
+
+    var aisle, bay, shelf, pos;
+    var mFull = loc.match(/\d{2}-([A-Z]{2})-(\d+)-([A-Z])-(\d+)/);
+    var mBay  = loc.match(/\d{2}-([A-Z]{2})-(\d+)$/);
+    if (mFull) {
+      aisle = mFull[1]; bay = parseInt(mFull[2]); shelf = mFull[3]; pos = parseInt(mFull[4]);
+    } else if (mBay) {
+      aisle = mBay[1]; bay = parseInt(mBay[2]); shelf = 'WHOLE'; pos = 1;
+    } else { continue; }
+
+    if (!warehouseData[aisle])             warehouseData[aisle] = {};
+    if (!warehouseData[aisle][bay])        warehouseData[aisle][bay] = {};
+    if (!warehouseData[aisle][bay][shelf]) warehouseData[aisle][bay][shelf] = [];
+    warehouseData[aisle][bay][shelf].push({ pos: pos, loc: loc, desc: desc, type: type, inactive: inactive });
+    allLocations.push({ aisle: aisle, bay: bay, shelf: shelf, pos: pos, loc: loc, desc: desc, type: type, inactive: inactive });
+  }
+
+  var keys = Object.keys(warehouseData);
+  for (var k = 0; k < keys.length; k++) {
+    var bays = warehouseData[keys[k]];
+    var bayKeys = Object.keys(bays);
+    for (var b = 0; b < bayKeys.length; b++) {
+      var shelves = bays[bayKeys[b]];
+      var shelfKeys = Object.keys(shelves);
+      for (var s = 0; s < shelfKeys.length; s++) {
+        shelves[shelfKeys[s]].sort(function(a,b){ return a.pos - b.pos; });
+      }
+    }
+  }
+
+  var aisles = Object.keys(warehouseData).sort();
+  currentAisle = aisles[0];
+  buildAisleTabs(aisles);
+  showUI();
+  renderList('');
+
+  document.getElementById('status-badge').textContent = allLocations.length + ' locs · ' + aisles.length + ' aisles';
+  document.getElementById('status-badge').className = 'status-badge loaded';
+  document.getElementById('export-btn').style.display = '';
+  document.getElementById('update-btn').style.display = '';
+
+  try {
+    localStorage.setItem('warehouseData', JSON.stringify(warehouseData));
+    localStorage.setItem('allLocations',  JSON.stringify(allLocations));
+  } catch(e) {}
+}
+
+function showUI() {
+  document.getElementById('drop-zone').style.display = 'none';
+  document.getElementById('aisle-tabs').classList.add('visible');
+  document.getElementById('view-toggle').classList.add('visible');
+  document.getElementById('legend').classList.add('visible');
+  setView('list');
+}
+
+function buildAisleTabs(aisles) {
+  var tabBar = document.getElementById('aisle-tabs');
+  tabBar.innerHTML = '';
+  for (var i = 0; i < aisles.length; i++) {
+    var btn = document.createElement('button');
+    btn.className = 'aisle-tab' + (aisles[i] === currentAisle ? ' active' : '');
+    btn.textContent = aisles[i];
+    btn.setAttribute('onclick', 'switchAisle("' + aisles[i] + '")');
+    tabBar.appendChild(btn);
+  }
+}
+
+function switchAisle(aisle) {
+  currentAisle = aisle;
+  var tabs = document.querySelectorAll('.aisle-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle('active', tabs[i].textContent === aisle);
+  }
+  var q = document.getElementById('search-input').value;
+  if (currentView === 'list') renderList(q);
+  else renderWarehouse();
+}
+
+function setView(v) {
+  currentView = v;
+  document.getElementById('btn-list').classList.toggle('active', v === 'list');
+  document.getElementById('btn-map').classList.toggle('active',  v === 'map');
+  document.getElementById('list-view').classList.toggle('visible', v === 'list');
+  document.getElementById('map-view').classList.toggle('visible',  v === 'map');
+  if (v === 'map') renderWarehouse();
+}
+
+function renderList(q) {
+  var el    = document.getElementById('list-view');
+  var query = (q || '').toUpperCase().trim();
+  var locs  = [];
+  for (var i = 0; i < allLocations.length; i++) {
+    if (allLocations[i].aisle === currentAisle) locs.push(allLocations[i]);
+  }
+
+  if (query) {
+    var filtered = [];
+    for (var i = 0; i < locs.length; i++) {
+      if (locs[i].loc.toUpperCase().indexOf(query) >= 0 || locs[i].desc.toUpperCase().indexOf(query) >= 0) {
+        filtered.push(locs[i]);
+      }
+    }
+    if (filtered.length === 0) {
+      for (var i = 0; i < allLocations.length; i++) {
+        var l = allLocations[i];
+        if (l.aisle !== currentAisle && (l.loc.toUpperCase().indexOf(query) >= 0 || l.desc.toUpperCase().indexOf(query) >= 0)) {
+          currentAisle = l.aisle;
+          var tabs = document.querySelectorAll('.aisle-tab');
+          for (var t = 0; t < tabs.length; t++) tabs[t].classList.toggle('active', tabs[t].textContent === currentAisle);
+          filtered = [];
+          for (var j = 0; j < allLocations.length; j++) {
+            var ll = allLocations[j];
+            if (ll.aisle === currentAisle && (ll.loc.toUpperCase().indexOf(query) >= 0 || ll.desc.toUpperCase().indexOf(query) >= 0)) filtered.push(ll);
+          }
+          break;
+        }
+      }
+    }
+    locs = filtered;
+  }
+
+  if (locs.length === 0) {
+    el.innerHTML = '<div class="no-results">' + (query ? 'No results for "' + q + '"' : 'No locations') + '</div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < locs.length; i++) {
+    var l = locs[i];
+    var sc    = getShelfClass(l.type, l.inactive);
+    var empty = !l.desc || l.inactive === 'Yes';
+    var desc  = l.desc || (l.inactive === 'Yes' ? 'Inactive' : 'Empty');
+    html += '<div class="result-item" onclick="openDetail(\'' + l.aisle + '\',' + l.bay + ')">' +
+      '<div class="result-dot dot-' + sc + '"></div>' +
+      '<div class="result-body"><div class="result-loc">' + l.loc + '</div>' +
+      '<div class="result-desc' + (empty ? ' empty' : '') + '">' + desc + '</div></div>' +
+      '<div class="result-arrow">›</div></div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderWarehouse(highlightBays, highlightLocs) {
+  var container = document.getElementById('warehouse');
+  container.innerHTML = '';
+  if (!currentAisle || !warehouseData[currentAisle]) return;
+
+  var bayData  = warehouseData[currentAisle];
+  var bays     = Object.keys(bayData).map(Number).sort(function(a,b){return a-b;});
+  var oddBays  = bays.filter(function(b){return b%2===1;});
+  var evenBays = bays.filter(function(b){return b%2===0;});
+
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;flex:1;';
+
+  function makeRow(side, bayList) {
+    var row = document.createElement('div');
+    row.className = 'aisle-row';
+    var lbl = document.createElement('div');
+    lbl.className = 'side-label';
+    lbl.textContent = side;
+    row.appendChild(lbl);
+    for (var i = 0; i < bayList.length; i++) row.appendChild(renderBay(bayList[i], highlightBays, highlightLocs));
+    return row;
+  }
+
+  wrap.appendChild(makeRow('ODD', oddBays));
+  var ww = document.createElement('div'); ww.className = 'walkway-row';
+  var ws = document.createElement('div'); ws.className = 'walkway-spacer';
+  var wk = document.createElement('div'); wk.className = 'walkway';
+  wk.innerHTML = '<span class="walkway-lbl">walkway</span>';
+  ww.appendChild(ws); ww.appendChild(wk);
+  wrap.appendChild(ww);
+  wrap.appendChild(makeRow('EVEN', evenBays));
+  container.appendChild(wrap);
+}
+
+function renderBay(bay, highlightBays, highlightLocs) {
+  var shelves = warehouseData[currentAisle][bay];
+  var dir     = getDirection(bay);
+  var isHL    = highlightBays && highlightBays.has(bay);
+
+  var bayEl = document.createElement('div');
+  bayEl.className = 'bay' + (isHL ? ' highlighted' : '');
+  bayEl.setAttribute('onclick', 'openDetail("' + currentAisle + '",' + bay + ')');
+
+  var hdr = document.createElement('div');
+  hdr.className = 'bay-header';
+  hdr.innerHTML = '<span class="bay-num">' + String(bay).padStart(2,'0') + '</span><span class="bay-dir">' + dir + '</span>';
+  bayEl.appendChild(hdr);
+
+  var shelvesEl = document.createElement('div');
+  shelvesEl.className = 'bay-shelves';
+
+  var shelfKeys = Object.keys(shelves).sort().reverse();
+  for (var i = 0; i < shelfKeys.length; i++) {
+    var sl      = shelfKeys[i];
+    var items   = shelves[sl];
+    var primary = items[0];
+    var sc      = getShelfClass(primary.type, primary.inactive);
+    var isHLS   = highlightLocs && items.some(function(it){return highlightLocs.has(it.loc);});
+
+    var shelfEl = document.createElement('div');
+    shelfEl.className = 'shelf ' + sc;
+    if (isHLS) shelfEl.style.outline = '2px solid var(--amber)';
+
+    if (sl === 'WHOLE') {
+      shelfEl.style.cssText += 'flex-direction:column;align-items:center;justify-content:center;min-height:40px;';
+      shelfEl.innerHTML = '<span class="shelf-lbl" style="font-size:7px;">WHOLE</span><span class="shelf-txt" style="text-align:center;">' + (primary.desc||'—') + '</span>';
+    } else {
+      shelfEl.innerHTML = '<span class="shelf-lbl">' + sl + '</span><span class="shelf-txt">' + (primary.desc||(primary.inactive==='Yes'?'Inactive':'—')) + '</span>' + (items.length>1?'<span class="shelf-badge">+' + (items.length-1) + '</span>':'');
+    }
+    shelvesEl.appendChild(shelfEl);
+  }
+  bayEl.appendChild(shelvesEl);
+  return bayEl;
+}
+
+function openDetail(aisle, bay) {
+  var shelves      = warehouseData[aisle][bay];
+  var dir          = getDirection(bay);
+  var shelfLetters = Object.keys(shelves).sort().reverse();
+  var totalLocs    = 0;
+  for (var i = 0; i < shelfLetters.length; i++) totalLocs += shelves[shelfLetters[i]].length;
+
+  document.getElementById('detail-title').textContent = aisle + ' · Bay ' + String(bay).padStart(2,'0');
+  document.getElementById('detail-tags').innerHTML =
+    '<div class="detail-tag">Direction: ' + dir + '</div>' +
+    '<div class="detail-tag">' + shelfLetters.length + ' shelves</div>' +
+    '<div class="detail-tag">' + totalLocs + ' locations</div>';
+
+  var body = document.getElementById('detail-body');
+  body.innerHTML = '';
+
+  for (var i = 0; i < shelfLetters.length; i++) {
+    var sl      = shelfLetters[i];
+    var items   = shelves[sl];
+    var primary = items[0];
+    var sc      = getShelfClass(primary.type, primary.inactive);
+    var isWhole = sl === 'WHOLE';
+
+    var section = document.createElement('div');
+    section.className = 'detail-shelf-section';
+
+    var head = document.createElement('div');
+    head.className = 'detail-shelf-head';
+    head.innerHTML = '<div class="detail-shelf-name">' + (isWhole ? 'ENTIRE BAY' : 'SHELF ' + sl) + '</div>' +
+      '<div class="detail-shelf-badge ' + sc + '-badge">' + (primary.type||'UNKNOWN') + '</div>';
+    section.appendChild(head);
+
+    for (var j = 0; j < items.length; j++) {
+      var item  = items[j];
+      var empty = !item.desc || item.inactive === 'Yes';
+      var desc  = item.desc || (item.inactive === 'Yes' ? 'Inactive' : 'Empty');
+      var row   = document.createElement('div');
+      row.className = 'detail-item';
+      row.innerHTML = '<div class="detail-item-pos">' + String(item.pos).padStart(2,'0') + '</div>' +
+        '<div class="detail-item-name' + (empty?' empty':'') + '">' + desc + '</div>';
+      section.appendChild(row);
+    }
+    body.appendChild(section);
+  }
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+function handleSearch() {
+  var q = document.getElementById('search-input').value;
+  var clear = document.getElementById('search-clear');
+  if (clear) clear.classList.toggle('visible', q.length > 0);
+  if (currentView === 'list') {
+    renderList(q);
+  } else {
+    var query = q.toUpperCase().trim();
+    if (!query) { renderWarehouse(); return; }
+    var matchedLocs = new Set();
+    var matchedBays = new Set();
+    for (var i = 0; i < allLocations.length; i++) {
+      var l = allLocations[i];
+      if (l.aisle !== currentAisle) continue;
+      if (l.loc.toUpperCase().indexOf(query) >= 0 || l.desc.toUpperCase().indexOf(query) >= 0) {
+        matchedLocs.add(l.loc); matchedBays.add(l.bay);
+      }
+    }
+    renderWarehouse(matchedBays, matchedLocs);
+  }
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  var clear = document.getElementById('search-clear');
+  if (clear) clear.classList.remove('visible');
+  if (currentView === 'list') renderList('');
+  else renderWarehouse();
+}
+
+// Polling fallback
+var _lastVal = '';
+setInterval(function() {
+  var el = document.getElementById('search-input');
+  if (!el) return;
+  if (el.value !== _lastVal) { _lastVal = el.value; handleSearch(); }
+}, 300);
+
+function doExport() {
+  var payload = JSON.stringify({ warehouseData: warehouseData, allLocations: allLocations }, null, 2);
+  var blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url;
+  a.download = 'warehouse_data.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
+}
+
+function handleFileInput(input) {
+  if (input.files && input.files[0]) handleFile(input.files[0]);
+}
+
+function handleFile(file) {
+  var ext = file.name.split('.').pop().toLowerCase();
+  var reader = new FileReader();
+  if (ext === 'csv') {
+    reader.onload = function(e) { parseData(Papa.parse(e.target.result, { skipEmptyLines: true }).data); };
+    reader.readAsText(file);
+  } else {
+    reader.onload = function(e) {
+      var wb   = XLSX.read(e.target.result, { type: 'array' });
+      var ws   = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      parseData(rows);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function applyData(src) {
+  warehouseData = src.warehouseData;
+  allLocations  = src.allLocations;
+  var aisles = Object.keys(warehouseData).sort();
+  currentAisle = aisles[0];
+  buildAisleTabs(aisles);
+  showUI();
+  renderList('');
+  document.getElementById('status-badge').textContent = allLocations.length + ' locs · ' + aisles.length + ' aisles';
+  document.getElementById('status-badge').className = 'status-badge loaded';
+  document.getElementById('export-btn').style.display = '';
+  document.getElementById('update-btn').style.display = '';
+}
+
+// Load: try JSON file (GitHub), then localStorage
+fetch('warehouse_data.json')
+  .then(function(r) { if (!r.ok) throw new Error('no json'); return r.json(); })
+  .then(function(src) { applyData(src); })
+  .catch(function() {
+    try {
+      var wd = localStorage.getItem('warehouseData');
+      var al = localStorage.getItem('allLocations');
+      if (wd && al) applyData({ warehouseData: JSON.parse(wd), allLocations: JSON.parse(al) });
+    } catch(e) {}
+  });
+</script>
+</body>
+</html>
